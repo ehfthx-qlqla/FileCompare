@@ -1,4 +1,4 @@
-# (C# 코딩) <FileCompare>
+# (C# 코딩) <File Compare>
 
 ## 개요
 - C# 프로그래밍학습
