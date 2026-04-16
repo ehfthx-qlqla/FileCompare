@@ -15,9 +15,9 @@ namespace FileCompare
             InitListViewControls();
         }
 
+        // 리스트뷰 초기 설정 (컬럼 구성)
         private void InitListViewControls()
         {
-            // 리스트뷰 설정 초기화
             lvwLeftDir.View = View.Details;
             lvwLeftDir.FullRowSelect = true;
             lvwLeftDir.Columns.Clear();
@@ -63,6 +63,7 @@ namespace FileCompare
             CompareAndPopulate(txtRightDir.Text, txtLeftDir.Text, lvwrightDir);
         }
 
+        // [과제 핵심] 파일 비교 및 색상 결정 로직
         private void CompareAndPopulate(string sourcePath, string targetPath, ListView lv)
         {
             lv.Items.Clear();
@@ -73,6 +74,7 @@ namespace FileCompare
                 DirectoryInfo diSource = new DirectoryInfo(sourcePath);
                 FileInfo[] files = diSource.GetFiles("*.*");
 
+                // 상대 폴더 파일 딕셔너리 준비
                 Dictionary<string, FileInfo> targetDict = new Dictionary<string, FileInfo>();
                 if (!string.IsNullOrWhiteSpace(targetPath) && Directory.Exists(targetPath))
                 {
@@ -89,29 +91,43 @@ namespace FileCompare
                     item.SubItems.Add((file.Length / 1024.0).ToString("N0") + " KB");
                     item.SubItems.Add(file.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"));
 
+                    // --- [과제 2단계 & 3단계] 비교 및 색상 적용 ---
                     if (targetDict.TryGetValue(file.Name, out FileInfo targetFile))
                     {
+                        // 1초 미만 오차 보정
                         TimeSpan diff = file.LastWriteTime - targetFile.LastWriteTime;
-                        if (Math.Abs(diff.TotalSeconds) < 1)
-                            item.ForeColor = Color.Black; // 동일
+                        double seconds = Math.Abs(diff.TotalSeconds);
+
+                        if (seconds < 1)
+                        {
+                            // 동일 파일: 검은색
+                            item.ForeColor = Color.Black;
+                        }
                         else if (file.LastWriteTime > targetFile.LastWriteTime)
-                            item.ForeColor = Color.Red;   // 신규(New)
+                        {
+                            // [New] 내 파일이 더 최신: 빨간색
+                            item.ForeColor = Color.Red;
+                        }
                         else
-                            item.ForeColor = Color.Gray;  // 과거(Old)
+                        {
+                            // [Old] 내 파일이 더 과거: 회색
+                            item.ForeColor = Color.Gray;
+                        }
                     }
                     else
                     {
-                        item.ForeColor = Color.Purple; // 단독 존재
+                        // [단독] 상대방 쪽에 없음: 보라색
+                        item.ForeColor = Color.Purple;
                     }
 
                     lv.Items.Add(item);
                 }
             }
-            catch (Exception ex) { MessageBox.Show("목록 갱신 오류: " + ex.Message); }
+            catch (Exception ex) { MessageBox.Show("오류: " + ex.Message); }
             finally { lv.EndUpdate(); }
         }
 
-        // --- [과제 3 핵심] 파일 복사 버튼 이벤트 ---
+        // [과제 3] 복사 기능
         private void btnCopyFromLeft_Click(object sender, EventArgs e)
             => ProcessFileCopy(lvwLeftDir, txtLeftDir.Text, txtRightDir.Text);
 
@@ -120,12 +136,7 @@ namespace FileCompare
 
         private void ProcessFileCopy(ListView sourceLv, string sDir, string tDir)
         {
-            if (sourceLv.SelectedItems.Count == 0)
-            {
-                MessageBox.Show("복사할 파일을 선택해주세요.");
-                return;
-            }
-
+            if (sourceLv.SelectedItems.Count == 0) return;
             if (string.IsNullOrWhiteSpace(sDir) || string.IsNullOrWhiteSpace(tDir)) return;
 
             foreach (ListViewItem item in sourceLv.SelectedItems)
@@ -139,33 +150,25 @@ namespace FileCompare
                     FileInfo sInfo = new FileInfo(sPath);
                     FileInfo tInfo = new FileInfo(tPath);
 
-                    // 과제 요건: 대상 파일이 더 최신인 경우 정보를 표시하고 확인 받기
-                    if (sInfo.LastWriteTime < tInfo.LastWriteTime)
-                    {
-                        string msg = $"대상의 파일이 더 최신입니다. 덮어쓰시겠습니까?\n\n" +
-                                     $"[원본] {sInfo.LastWriteTime}\n" +
-                                     $"[대상] {tInfo.LastWriteTime}";
+                    // 사진 속 경고창 내용 반영
+                    string msg = "대상에 동일한 이름의 파일이 이미 있습니다.\n" +
+                                 "대상 파일이 더 신규 파일입니다. 덮어쓰시겠습니까?\n\n" +
+                                 $"원본: {sPath}\n" +
+                                 $"(날짜: {sInfo.LastWriteTime:yyyy-MM-dd HH:mm:ss})\n\n" +
+                                 $"대상: {tPath}\n" +
+                                 $"(날짜: {tInfo.LastWriteTime:yyyy-MM-dd HH:mm:ss})";
 
-                        if (MessageBox.Show(msg, "덮어쓰기 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.No)
-                            continue;
-                    }
+                    var result = MessageBox.Show(msg, "덮어쓰기 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                    if (result == DialogResult.No) continue;
                 }
 
-                try
-                {
-                    File.Copy(sPath, tPath, true);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"{fileName} 복사 실패: {ex.Message}");
-                }
+                try { File.Copy(sPath, tPath, true); }
+                catch (Exception ex) { MessageBox.Show("복사 오류: " + ex.Message); }
             }
-
-            // 복사 완료 후 화면 갱신
             RefreshFileSystem();
-            MessageBox.Show("복사가 완료되었습니다.");
         }
 
+        // 디자인 에러 방지용
         private void splitContainer1_Panel2_Paint(object sender, PaintEventArgs e) { }
     }
 }
