@@ -12,25 +12,29 @@ namespace FileCompare
         public Form1()
         {
             InitializeComponent();
-            // ListView 설정: 상세 보기 모드 및 전체 행 선택
-            SetupListView(lvwLeftDir);
-            SetupListView(lvwrightDir);
+            // 실행 시점에 리스트뷰 형식을 강제로 초기화합니다.
+            InitListViewControls();
         }
 
-        private void SetupListView(ListView lv)
+        private void InitListViewControls()
         {
-            lv.View = View.Details;
-            lv.FullRowSelect = true;
-            // 컬럼이 없다면 기본 컬럼 생성 (이름, 크기, 수정일)
-            if (lv.Columns.Count == 0)
-            {
-                lv.Columns.Add("이름", 200);
-                lv.Columns.Add("크기", 100);
-                lv.Columns.Add("수정일", 150);
-            }
+            // 왼쪽 리스트뷰 초기화
+            lvwLeftDir.View = View.Details;
+            lvwLeftDir.FullRowSelect = true;
+            lvwLeftDir.Columns.Clear();
+            lvwLeftDir.Columns.Add("이름", 250);
+            lvwLeftDir.Columns.Add("크기", 100);
+            lvwLeftDir.Columns.Add("수정일", 180);
+
+            // 오른쪽 리스트뷰 초기화
+            lvwrightDir.View = View.Details;
+            lvwrightDir.FullRowSelect = true;
+            lvwrightDir.Columns.Clear();
+            lvwrightDir.Columns.Add("이름", 250);
+            lvwrightDir.Columns.Add("크기", 100);
+            lvwrightDir.Columns.Add("수정일", 180);
         }
 
-        // [과제 기능] 폴더 선택 및 리스트 갱신 (왼쪽)
         private void btnLeftDir_Click(object sender, EventArgs e)
         {
             using (var dlg = new FolderBrowserDialog())
@@ -38,12 +42,11 @@ namespace FileCompare
                 if (dlg.ShowDialog() == DialogResult.OK)
                 {
                     txtLeftDir.Text = dlg.SelectedPath;
-                    RefreshFileSystem(); // 양쪽 모두 다시 비교하여 표시
+                    RefreshFileSystem();
                 }
             }
         }
 
-        // [과제 기능] 폴더 선택 및 리스트 갱신 (오른쪽)
         private void btnRightDir_Click(object sender, EventArgs e)
         {
             using (var dlg = new FolderBrowserDialog())
@@ -51,73 +54,64 @@ namespace FileCompare
                 if (dlg.ShowDialog() == DialogResult.OK)
                 {
                     txtRightDir.Text = dlg.SelectedPath;
-                    RefreshFileSystem(); // 양쪽 모두 다시 비교하여 표시
+                    RefreshFileSystem();
                 }
             }
         }
 
-        // 양쪽 리스트를 새로고침하고 비교하는 메인 로직
         private void RefreshFileSystem()
         {
-            CompareAndPopulate(txtLeftDir.Text, txtRightDir.Text, lvwLeftDir, true);
-            CompareAndPopulate(txtRightDir.Text, txtLeftDir.Text, lvwrightDir, false);
+            // 두 경로 중 하나라도 있으면 실행
+            CompareAndPopulate(txtLeftDir.Text, txtRightDir.Text, lvwLeftDir);
+            CompareAndPopulate(txtRightDir.Text, txtLeftDir.Text, lvwrightDir);
         }
 
-        private void CompareAndPopulate(string sourcePath, string targetPath, ListView lv, bool isLeft)
+        private void CompareAndPopulate(string sourcePath, string targetPath, ListView lv)
         {
             lv.Items.Clear();
             if (string.IsNullOrWhiteSpace(sourcePath) || !Directory.Exists(sourcePath)) return;
 
             try
             {
-                // 1. 소스 폴더의 모든 파일 가져오기 (확장자 제한 없음)
-                var sourceDirInfo = new DirectoryInfo(sourcePath);
-                var sourceFiles = sourceDirInfo.GetFiles("*.*") // 모든 파일 형태 지정
-                                              .ToDictionary(f => f.Name);
+                DirectoryInfo diSource = new DirectoryInfo(sourcePath);
+                // [수정] 모든 파일을 가져오도록 명시
+                FileInfo[] files = diSource.GetFiles("*.*");
 
-                // 2. 대상 폴더 파일 목록 (비교용)
-                Dictionary<string, FileInfo> targetFiles = new Dictionary<string, FileInfo>();
+                // 비교 대상 폴더의 파일들 준비
+                Dictionary<string, FileInfo> targetDict = new Dictionary<string, FileInfo>();
                 if (!string.IsNullOrWhiteSpace(targetPath) && Directory.Exists(targetPath))
                 {
-                    targetFiles = new DirectoryInfo(targetPath).GetFiles("*.*")
-                                                               .ToDictionary(f => f.Name);
+                    foreach (var f in new DirectoryInfo(targetPath).GetFiles("*.*"))
+                    {
+                        if (!targetDict.ContainsKey(f.Name)) targetDict.Add(f.Name, f);
+                    }
                 }
 
                 lv.BeginUpdate();
-                // 3. 이름 순으로 정렬하여 리스트뷰에 추가
-                foreach (var file in sourceFiles.Values.OrderBy(f => f.Name))
+                foreach (FileInfo file in files.OrderBy(f => f.Name))
                 {
-                    var item = new ListViewItem(file.Name); // 파일명 (이미지, ppt, hwp 등 포함)
+                    // 1. 아이템 생성 (파일명)
+                    ListViewItem item = new ListViewItem(file.Name);
 
-                    // 크기 변환 (KB 단위)
-                    long fileSizeInBytes = file.Length;
-                    string sizeStr = (fileSizeInBytes / 1024.0).ToString("N0") + " KB";
-                    item.SubItems.Add(sizeStr);
+                    // 2. 서브 아이템 추가 (크기, 날짜)
+                    item.SubItems.Add((file.Length / 1024.0).ToString("N0") + " KB");
+                    item.SubItems.Add(file.LastWriteTime.ToString("yyyy-MM-dd HH:mm:ss"));
 
-                    // 수정일
-                    item.SubItems.Add(file.LastWriteTime.ToString("g"));
-
-                    // 4. [과제 핵심] 파일 비교 및 색상 결정
-                    if (targetFiles.TryGetValue(file.Name, out var targetFile))
+                    // 3. 색상 결정 로직
+                    if (targetDict.TryGetValue(file.Name, out FileInfo targetFile))
                     {
-                        // 양쪽 폴더에 파일명이 같은 파일이 있는 경우
-                        if (file.LastWriteTime == targetFile.LastWriteTime)
-                        {
-                            item.ForeColor = Color.Black; // 동일 파일: 검정
-                        }
+                        // 초 단위 절삭 후 비교 (미세한 차이 방지)
+                        TimeSpan diff = file.LastWriteTime - targetFile.LastWriteTime;
+                        if (Math.Abs(diff.TotalSeconds) < 1)
+                            item.ForeColor = Color.Black; // 동일
                         else if (file.LastWriteTime > targetFile.LastWriteTime)
-                        {
-                            item.ForeColor = Color.Red;   // 내가 더 최신(New): 빨강
-                        }
+                            item.ForeColor = Color.Red;   // 신규(New)
                         else
-                        {
-                            item.ForeColor = Color.Gray;  // 내가 더 오래됨(Old): 회색
-                        }
+                            item.ForeColor = Color.Gray;  // 과거(Old)
                     }
                     else
                     {
-                        // 상대 폴더에 없는 파일인 경우
-                        item.ForeColor = Color.Purple;    // 단독 파일: 보라
+                        item.ForeColor = Color.Purple; // 단독 존재
                     }
 
                     lv.Items.Add(item);
@@ -125,7 +119,7 @@ namespace FileCompare
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"파일 목록을 읽는 중 오류 발생: {ex.Message}");
+                MessageBox.Show("오류 발생: " + ex.Message);
             }
             finally
             {
@@ -133,59 +127,32 @@ namespace FileCompare
             }
         }
 
-        // [과제 기능] 왼쪽 -> 오른쪽 복사
-        private void btnCopyFromLeft_Click(object sender, EventArgs e)
-        {
-            CopySelectedFiles(lvwLeftDir, txtLeftDir.Text, txtRightDir.Text);
-        }
+        // 복사 버튼 이벤트들 (연결 확인 필요)
+        private void btnCopyFromLeft_Click(object sender, EventArgs e) => CopyFiles(lvwLeftDir, txtLeftDir.Text, txtRightDir.Text);
+        private void btnCopyFromRight_Click(object sender, EventArgs e) => CopyFiles(lvwrightDir, txtRightDir.Text, txtLeftDir.Text);
 
-        // [과제 기능] 오른쪽 -> 왼쪽 복사
-        private void btnCopyFromRight_Click(object sender, EventArgs e)
+        private void CopyFiles(ListView sourceLv, string sDir, string tDir)
         {
-            CopySelectedFiles(lvwrightDir, txtRightDir.Text, txtLeftDir.Text);
-        }
-
-        private void CopySelectedFiles(ListView lv, string sourceDir, string destDir)
-        {
-            if (string.IsNullOrEmpty(sourceDir) || string.IsNullOrEmpty(destDir)) return;
-
-            foreach (ListViewItem item in lv.SelectedItems)
+            if (sourceLv.SelectedItems.Count == 0) return;
+            foreach (ListViewItem item in sourceLv.SelectedItems)
             {
-                string fileName = item.Text;
-                string sourcePath = Path.Combine(sourceDir, fileName);
-                string destPath = Path.Combine(destDir, fileName);
+                string sPath = Path.Combine(sDir, item.Text);
+                string tPath = Path.Combine(tDir, item.Text);
 
-                if (File.Exists(destPath))
+                if (File.Exists(tPath))
                 {
-                    FileInfo srcInfo = new FileInfo(sourcePath);
-                    FileInfo destInfo = new FileInfo(destPath);
-
-                    // [과제 기능] 날짜 확인 및 확인창 띄우기
-                    if (srcInfo.LastWriteTime < destInfo.LastWriteTime)
+                    if (new FileInfo(sPath).LastWriteTime < new FileInfo(tPath).LastWriteTime)
                     {
-                        var result = MessageBox.Show(
-                            $"{fileName}은(는) 대상 폴더의 파일보다 오래되었습니다. 덮어쓰시겠습니까?",
-                            "복사 확인", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-
-                        if (result == DialogResult.No) continue;
+                        if (MessageBox.Show($"{item.Text}는 대상보다 오래된 파일입니다. 덮어쓸까요?", "확인", MessageBoxButtons.YesNo) == DialogResult.No)
+                            continue;
                     }
                 }
-
-                try
-                {
-                    File.Copy(sourcePath, destPath, true);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"파일 복사 중 오류 발생: {ex.Message}");
-                }
+                File.Copy(sPath, tPath, true);
             }
             RefreshFileSystem();
-        }// 복사 후 리스트 갱신
-            // 디자인 파일과의 연결 오류를 해결하기 위한 빈 메서드
-            private void splitContainer1_Panel2_Paint(object sender, PaintEventArgs e)
-        {
-            // 아무 내용도 적지 않아도 됩니다.
         }
+
+        // 이전 에러 방지용 빈 메서드 (필요시 유지)
+        private void splitContainer1_Panel2_Paint(object sender, PaintEventArgs e) { }
     }
 }
